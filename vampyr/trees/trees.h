@@ -21,6 +21,8 @@
 #include <MRCPP/trees/TreeIterator.h>
 #include <MRCPP/utils/mpi_utils.h>
 
+#include "PySerialTree.h"
+
 namespace vampyr {
 template <int D> void trees(pybind11::module &m) {
     using namespace mrcpp;
@@ -61,8 +63,12 @@ template <int D> void trees(pybind11::module &m) {
         .def("countNodes", pybind11::overload_cast<int>(&MWTree<D>::countNodes))
         .def("RecountNodes", &MWTree<D>::RecountNodes);
 
-    pybind11::class_<FunctionTree<D>> functree(m, "FunctionTree", mwtree);
-    functree.def(pybind11::init<MultiResolutionAnalysis<D>>())
+    pybind11::class_<FunctionTree<D>, MWTree<D>, RepresentableFunction<D>> functree(m, "FunctionTree");
+    functree.def(pybind11::init([](const MultiResolutionAnalysis<D> &mra) {
+            auto foo = std::make_unique<FunctionTree<D>>(mra, nullptr);
+	    std::cout << " boo " << std::endl;
+	    return foo;
+        }))
         .def("clear", &FunctionTree<D>::clear, "Clears the FunctionTree")
         .def("integrate", &FunctionTree<D>::integrate, "Integral of the FunctionTree over all space")
         .def("normalize", &FunctionTree<D>::normalize, "Rescale the function by its norm, fixed grid")
@@ -161,9 +167,10 @@ template <int D> void trees(pybind11::module &m) {
         .def("getNode", pybind11::overload_cast<int>(&NodeBox<D>::getNode, pybind11::const_))
         .def("getNOccupied", &NodeBox<D>::getNOccupied);
 
-    // int * wont work since raw pointers does not exist in python
     pybind11::class_<NodeIndex<D>> nodeindex(m, "NodeIndex");
-    nodeindex.def(pybind11::init<int, int *>())
+    nodeindex.def(pybind11::init([](int n, std::array<int, D> l) {
+            return std::make_unique<NodeIndex<D>>(n, l.data());
+        }))
         .def("setScale", &NodeIndex<D>::setScale)
         .def("setTranslation", &NodeIndex<D>::setTranslation)
         .def("getScale", &NodeIndex<D>::getScale)
@@ -171,14 +178,18 @@ template <int D> void trees(pybind11::module &m) {
     //  .def("getTranslation", pybind11::overload_cast<int *>(&NodeIndex<D>::getTranslation))
     //  .def("getTranslation", pybind11::overload_cast<const int *>(&NodeIndex<D>::getTranslation, pybind11::const_));
 
-    pybind11::class_<SerialTree<D>> serialtree(m, "SerialTree");
-    serialtree.def("isShared", &SerialTree<D>::isShared)
+    pybind11::class_<SerialTree<D>, PySerialTree<D>> serialtree(m, "SerialTree");
+    serialtree.def(pybind11::init([](MWTree<D> &tree) {
+            return std::make_unique<PySerialTree<D>>(&tree, nullptr);
+        }))
+        .def("isShared", &SerialTree<D>::isShared)
         .def("S_mwTransform", &SerialTree<D>::S_mwTransform)
         .def("S_mwTransformBack", &SerialTree<D>::S_mwTransformBack);
 
-    // <FunctionTree<D> * and SharedMemory * wont work since raw pointers does not exist in python
     pybind11::class_<SerialFunctionTree<D>> serialfunctree(m, "SerialFunctionTree", serialtree);
-    serialfunctree.def(pybind11::init<FunctionTree<D> *, SharedMemory *>())
+    serialfunctree.def(pybind11::init([](FunctionTree<D> &tree) {
+            return std::make_unique<SerialFunctionTree<D>>(&tree, nullptr);
+        }))
         .def("allocRoots", &SerialFunctionTree<D>::allocRoots)
         .def("allocChildren", &SerialFunctionTree<D>::allocChildren)
         .def("allocGenChildren", &SerialFunctionTree<D>::allocGenChildren)
